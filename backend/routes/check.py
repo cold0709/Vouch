@@ -9,7 +9,12 @@ from models import CheckRequest, CheckResponse
 from database import supabase
 
 router = APIRouter()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI (
+    api_key=os.getenv("GROQ_API_KEY"),
+    base_url="https://api.groq.com/openai/v1"
+)
+
+
 
 
 def run_rule_based_checks(text: str, rules: list) -> list:
@@ -97,10 +102,11 @@ If no issues found, return {{"findings": []}}.
 """
 
     completion = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-    )
+    model="openai/gpt-oss-20b",
+    messages=[{"role": "user", "content": prompt}],
+    response_format={"type": "json_object"},
+    temperature=0.2,
+)
 
     raw = json.loads(completion.choices[0].message.content)
 
