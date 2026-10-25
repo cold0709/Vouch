@@ -1,4 +1,3 @@
-# backend/routes/check.py
 import os
 import re
 import json
@@ -9,39 +8,44 @@ from models import CheckRequest, CheckResponse
 from database import supabase
 
 router = APIRouter()
-client = OpenAI (
+client = OpenAI(
     api_key=os.getenv("GROQ_API_KEY"),
     base_url="https://api.groq.com/openai/v1"
 )
-
-
 
 
 def run_rule_based_checks(text: str, rules: list) -> list:
     findings = []
     term_rules = [r for r in rules if r["type"] == "terminology"]
 
+    # 1. Terminology checks (case-insensitive search, exact match capture)
     for rule in term_rules:
-        if rule.get("avoid_term") and rule["avoid_term"].lower() in text.lower():
+        avoid_term = rule.get("avoid_term")
+        if not avoid_term:
+            continue
+        match = re.search(re.escape(avoid_term), text, re.IGNORECASE)
+        if match:
             findings.append({
                 "type": "terminology",
                 "rule_id": rule["id"],
                 "status": "CONFLICT",
                 "explanation": f'Guideline "{rule["title"]}" states: {rule["content"]}',
-                "original_snippet": rule["avoid_term"],
+                "original_snippet": match.group(0),  # Preserves actual casing from content
                 "suggested_fix": rule["preferred_term"],
                 "severity": "medium",
             })
 
+    # 2. Tone / Exclamation checks
     if re.search(r"!{2,}", text):
         match = re.search(r"\S*!{2,}\S*", text)
+        snippet = match.group(0) if match else "!!"
         findings.append({
             "type": "tone",
             "rule_id": None,
             "status": "CONFLICT",
             "explanation": "Multiple exclamation marks detected — may appear unprofessional.",
-            "original_snippet": match.group(0) if match else "!!",
-            "suggested_fix": re.sub(r"!{2,}", ".", text),
+            "original_snippet": snippet,
+            "suggested_fix": re.sub(r"!{2,}", ".", snippet),  # Fixes snippet only, NOT whole text
             "severity": "low",
         })
 
@@ -50,13 +54,14 @@ def run_rule_based_checks(text: str, rules: list) -> list:
 
 def run_accessibility_checks(text: str) -> list:
     findings = []
-    if "click here" in text.lower():
+    match = re.search(r"click here", text, re.IGNORECASE)
+    if match:
         findings.append({
             "type": "accessibility",
             "rule_id": None,
             "status": "CONFLICT",
             "explanation": "Vague link text like 'click here' is not accessible for screen readers.",
-            "original_snippet": "click here",
+            "original_snippet": match.group(0),
             "suggested_fix": "View our offer",
             "severity": "low",
         })
@@ -98,15 +103,18 @@ Return ONLY valid JSON in this exact format:
     }}
   ]
 }}
+
+IMPORTANT: "original_snippet" MUST be an EXACT, character-for-character substring copied directly from CONTENT TO REVIEW above. Do not reword or paraphrase. If you cannot extract an exact substring, set "original_snippet" to null.
+
 If no issues found, return {{"findings": []}}.
 """
 
     completion = client.chat.completions.create(
-    model="openai/gpt-oss-20b",
-    messages=[{"role": "user", "content": prompt}],
-    response_format={"type": "json_object"},
-    temperature=0.2,
-)
+        model="openai/gpt-oss-20b",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        temperature=0.2,
+    )
 
     raw = json.loads(completion.choices[0].message.content)
 

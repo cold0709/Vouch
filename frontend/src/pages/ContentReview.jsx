@@ -29,7 +29,7 @@ function FindingCard({ finding, onAccept, onMarkGap }) {
 
       <p className="text-sm mb-2">{finding.explanation}</p>
       <p className="text-sm bg-white border rounded p-2 mb-2">
-        <span className="line-through text-gray-500">{finding.original_snippet}</span>
+        <span className="line-through text-gray-500">{finding.original_snippet || "(No exact text match)"}</span>
         {finding.suggested_fix && <span className="text-green-700 font-medium"> → {finding.suggested_fix}</span>}
       </p>
 
@@ -72,9 +72,17 @@ export default function ContentReview() {
   };
 
   const acceptSuggestion = async (finding) => {
+    if (!finding.original_snippet || !content.current_text.includes(finding.original_snippet)) {
+      alert("Can't auto-apply this suggestion because the exact snippet couldn't be located. Please edit the text directly in the box.");
+      return;
+    }
+
     const updated = content.current_text.replace(finding.original_snippet, finding.suggested_fix);
     setContent({ ...content, current_text: updated });
     await api.put(`/api/content/${id}`, { title: content.title, text: updated });
+
+    // Remove accepted finding card from UI immediately
+    setFindings((prev) => prev.filter((f) => f !== finding));
   };
 
   const markGap = async (finding) => {
@@ -113,14 +121,14 @@ export default function ContentReview() {
 
         <div className="mt-6 border-t pt-4">
           <p className="text-xs text-gray-500">
-            🔒 Content processed via Groq (Llama 3.3) for AI-assisted review. No auto-publish — human approval required.
+            🔒 Content processed via Groq for AI-assisted review. No auto-publish — human approval required.
           </p>
         </div>
       </div>
 
       <div>
         <h2 className="font-semibold mb-2">Findings ({findings.length})</h2>
-        {findings.length === 0 && <p className="text-sm text-gray-500">No issues found yet. Run a check.</p>}
+        {findings.length === 0 && <p className="text-sm text-gray-500">No issues found. Run a check!</p>}
         {findings.map((f, i) => (
           <FindingCard key={i} finding={f} onAccept={acceptSuggestion} onMarkGap={markGap} />
         ))}
